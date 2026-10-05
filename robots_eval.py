@@ -69,12 +69,28 @@ def parse(text):
     return groups
 
 
-def _pat_to_re(p):
-    anchored = p.endswith("$")
+def _match(pat, path):
+    """Google-style robots pattern match: '*' = any sequence, trailing '$' = end anchor; prefix match otherwise.
+    Non-backtracking two-pointer wildcard algorithm (avoids regex blow-ups on patterns with many '*')."""
+    anchored = pat.endswith("$")
     if anchored:
-        p = p[:-1]
-    rx = "".join(".*" if c == "*" else re.escape(c) for c in p)
-    return re.compile(rx + ("$" if anchored else ""))
+        pat = pat[:-1]
+    else:
+        pat = pat + "*"
+    p = s = 0
+    star = -1; mark = 0
+    while s < len(path):
+        if p < len(pat) and pat[p] != "*" and pat[p] == path[s]:
+            p += 1; s += 1
+        elif p < len(pat) and pat[p] == "*":
+            star = p; mark = s; p += 1
+        elif star != -1:
+            p = star + 1; mark += 1; s = mark
+        else:
+            return False
+    while p < len(pat) and pat[p] == "*":
+        p += 1
+    return p == len(pat)
 
 
 def allowed(rules, path="/"):
@@ -82,7 +98,7 @@ def allowed(rules, path="/"):
     for allow, pat in rules:
         if not pat.startswith("/") and not pat.startswith("*"):
             pat = "/" + pat
-        if _pat_to_re(pat).match(path):
+        if _match(pat, path):
             ln = len(pat)
             if ln > best_len or (ln == best_len and allow):
                 best_len, best_allow = ln, allow
