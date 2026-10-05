@@ -8,7 +8,7 @@ import aiohttp
 
 LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else None
 BASE = "https://data.commoncrawl.org/"
-CONC = 48
+CONC = 8
 UA = "robots-txt-research/1.0 (+https://github.com/jomilu93/robots-txt-crawl)"
 
 
@@ -19,7 +19,7 @@ def surt(host, path):
     return ",".join(reversed(h.split("."))) + ")" + path
 
 
-async def fetch(session, url, rng=None, tries=5):
+async def fetch(session, url, rng=None, tries=8):
     for i in range(tries):
         try:
             hdr = {"User-Agent": UA}
@@ -29,7 +29,7 @@ async def fetch(session, url, rng=None, tries=5):
                 if r.status in (200, 206):
                     return await r.read()
                 if r.status in (503, 429, 500, 502, 504):
-                    await asyncio.sleep(2 ** i)
+                    await asyncio.sleep(min(60, 2 ** i) + 1)
                     continue
                 return None
         except Exception:
@@ -49,6 +49,7 @@ async def load_cluster(session, crawl):
 
 
 block_cache = {}
+FAILED = 0
 
 
 async def lookup(session, sem, crawl, cl, key):
@@ -65,7 +66,11 @@ async def lookup(session, sem, crawl, cl, key):
         if ck not in block_cache:
             async with sem:
                 data = await fetch(session, f"{BASE}cc-index/collections/{crawl}/indexes/{fn}", (off, ln))
-            block_cache[ck] = zlib.decompress(data, 16 + zlib.MAX_WBITS).decode("utf-8", "replace") if data else ""
+            if not data:
+                global FAILED
+                FAILED += 1
+                continue
+            block_cache[ck] = zlib.decompress(data, 16 + zlib.MAX_WBITS).decode("utf-8", "replace")
         for line in block_cache[ck].splitlines():
             if line.startswith(key + " "):
                 found.append(json.loads(line.split(" ", 2)[2]))
@@ -166,7 +171,7 @@ async def main():
                 f.write(json.dumps(await fut) + "\n")
                 n += 1
                 if n % 500 == 0:
-                    print(n, len(rows), f"{time.time()-t0:.0f}s", "blocks", len(block_cache), flush=True)
+                    print(n, len(rows), f"{time.time()-t0:.0f}s", "blocks", len(block_cache), "failed", FAILED, flush=True)
                     if len(block_cache) > 600:
                         block_cache.clear()
     print("done", n)
