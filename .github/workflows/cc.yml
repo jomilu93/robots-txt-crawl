@@ -1,0 +1,20 @@
+name: cc-fallback
+on:
+  push:
+    branches: [main]
+    paths: ["fallback.csv", "cc_fallback.py", "cc_limit.txt", ".github/workflows/cc.yml"]
+permissions:
+  contents: write
+jobs:
+  cc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install aiohttp
+      - run: mkdir -p results && python cc_fallback.py $(cat cc_limit.txt)
+      - run: |
+          git config user.name "crawl-bot"; git config user.email "crawl-bot@users.noreply.github.com"
+          git add results/cc_fallback.jsonl.gz && git commit -m "Common Crawl fallback" && git pull --rebase && git push
