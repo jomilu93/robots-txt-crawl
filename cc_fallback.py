@@ -26,13 +26,15 @@ async def fetch(session, url, rng=None, tries=8):
             if rng:
                 hdr["Range"] = f"bytes={rng[0]}-{rng[0] + rng[1] - 1}"
             async with session.get(url, headers=hdr) as r:
+                STATS[r.status] = STATS.get(r.status, 0) + 1
                 if r.status in (200, 206):
                     return await r.read()
                 if r.status in (503, 429, 500, 502, 504):
                     await asyncio.sleep(min(60, 2 ** i) + 1)
                     continue
                 return None
-        except Exception:
+        except Exception as e:
+            STATS[type(e).__name__] = STATS.get(type(e).__name__, 0) + 1
             await asyncio.sleep(2 ** i)
     return None
 
@@ -50,6 +52,7 @@ async def load_cluster(session, crawl):
 
 block_cache = {}
 FAILED = 0
+STATS = {}
 
 
 async def lookup(session, sem, crawl, cl, key):
@@ -171,9 +174,9 @@ async def main():
                 f.write(json.dumps(await fut) + "\n")
                 n += 1
                 if n % 500 == 0:
-                    print(n, len(rows), f"{time.time()-t0:.0f}s", "blocks", len(block_cache), "failed", FAILED, flush=True)
+                    print(n, len(rows), f"{time.time()-t0:.0f}s", "blocks", len(block_cache), "failed", FAILED, STATS, flush=True)
                     if len(block_cache) > 600:
                         block_cache.clear()
-    print("done", n)
+    print("done", n, STATS)
 
 asyncio.run(main())
