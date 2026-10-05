@@ -170,7 +170,8 @@ async def main():
 
         n = 0
         with gzip.open("results/cc_fallback.jsonl.gz", "wt") as f:
-            for fut in asyncio.as_completed([one(r) for r in rows]):
+            for b in range(0, len(rows), 200):
+              for fut in asyncio.as_completed([one(r) for r in rows[b:b + 200]]):
                 f.write(json.dumps(await fut) + "\n")
                 n += 1
                 if n % 500 == 0:
