@@ -6,9 +6,10 @@ Usage: python cc_fallback.py [limit]
 import asyncio, bisect, csv, gzip, io, json, re, sys, time, zlib
 import aiohttp
 
-LIMIT = int(sys.argv[1]) if len(sys.argv) > 1 else None
+SHARD, NSH = (int(sys.argv[1]), int(sys.argv[2])) if len(sys.argv) > 2 else (0, 1)
+LIMIT = None
 BASE = "https://data.commoncrawl.org/"
-CONC = 8
+CONC = 4
 UA = "robots-txt-research/1.0 (+https://github.com/jomilu93/robots-txt-crawl)"
 
 
@@ -29,7 +30,7 @@ async def fetch(session, url, rng=None, tries=8):
                 STATS[r.status] = STATS.get(r.status, 0) + 1
                 if r.status in (200, 206):
                     return await r.read()
-                if r.status in (503, 429, 500, 502, 504):
+                if r.status in (403, 503, 429, 500, 502, 504):
                     await asyncio.sleep(min(60, 2 ** i) + 1)
                     continue
                 return None
@@ -107,6 +108,8 @@ def meta_tag(html, name):
 async def main():
     rows = list(csv.DictReader(open("fallback.csv")))
     rows.sort(key=lambda r: surt(r["origin"].split("://", 1)[1], "/"))
+    per = -(-len(rows) // NSH)
+    rows = rows[SHARD * per:(SHARD + 1) * per]
     if LIMIT:
         rows = rows[::max(1, len(rows) // LIMIT)][:LIMIT]
     timeout = aiohttp.ClientTimeout(total=120)
@@ -169,7 +172,7 @@ async def main():
             return out
 
         n = 0
-        with gzip.open("results/cc_fallback.jsonl.gz", "wt") as f:
+        with gzip.open(f"out/cc_{SHARD:02d}.jsonl.gz", "wt") as f:
             for b in range(0, len(rows), 200):
               for fut in asyncio.as_completed([one(r) for r in rows[b:b + 200]]):
                 f.write(json.dumps(await fut) + "\n")
