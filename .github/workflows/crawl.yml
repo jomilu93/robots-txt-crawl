@@ -1,0 +1,46 @@
+name: crawl
+on:
+  push:
+    branches: [main]
+    paths: ["sites.csv", "crawl.py", "embed.py", ".github/workflows/crawl.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install aiohttp
+      - run: mkdir -p out && python crawl.py ${{ matrix.shard }} 20
+      - uses: actions/upload-artifact@v4
+        with: { name: "shard-${{ matrix.shard }}", path: out/ }
+  finalize:
+    needs: crawl
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - uses: actions/download-artifact@v4
+        with: { path: dl }
+      - run: mkdir -p results && cp dl/*/*.jsonl.gz results/ && ls -la results
+      - name: Tranco list
+        run: |
+          curl -sSL -o tranco.zip https://tranco-list.eu/top-1m.csv.zip && unzip -p tranco.zip | head -1000000 | gzip > results/tranco_top1m.csv.gz || echo "tranco failed"
+          curl -sSL https://tranco-list.eu/top-1m-id | tee results/tranco_list_id.txt || true
+      - run: pip install sentence-transformers numpy
+      - run: python embed.py
+      - name: Commit results
+        run: |
+          git config user.name "crawl-bot"; git config user.email "crawl-bot@users.noreply.github.com"
+          git add results && git commit -m "Crawl results $(date -u +%F)" && git push
