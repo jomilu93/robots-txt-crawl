@@ -104,7 +104,7 @@ async def main():
     timeout = aiohttp.ClientTimeout(total=120)
     async with aiohttp.ClientSession(timeout=timeout, connector=aiohttp.TCPConnector(limit=CONC)) as session:
         info = json.loads(await fetch(session, "https://index.commoncrawl.org/collinfo.json"))
-        crawls = [c["id"] for c in info[:2]]
+        crawls = [c["id"] for c in info[:3]]
         print("crawls", crawls, flush=True)
         clusters = {c: await load_cluster(session, c) for c in crawls}
         sem = asyncio.Semaphore(CONC)
@@ -129,6 +129,12 @@ async def main():
             out = {"origin": row["origin"]}
             if row["need_robots"] == "1":
                 cap = await best_capture(host, "/robots.txt", True)
+                if cap and cap.get("status") in ("301", "302", "307", "308") and cap.get("redirect"):
+                    m = re.match(r"https?://([^/]+)(/.*)?", cap["redirect"])
+                    if m and (m.group(2) or "/") == "/robots.txt":
+                        cap2 = await best_capture(m.group(1), "/robots.txt", True)
+                        if cap2:
+                            cap = cap2
                 if cap:
                     out.update(cc_robots_status=int(cap.get("status", 0) or 0), cc_robots_ts=cap.get("timestamp"), cc_crawl=cap["crawl"],
                                cc_robots_url=cap.get("url"))
